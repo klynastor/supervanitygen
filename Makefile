@@ -6,10 +6,10 @@ LDLIBS=-lm -lgmp
 
 OBJS=vanitygen.o base58.o rmd160.o sha256.o
 
-ifeq ($(shell arch),x86_64)
+ifeq ($(shell uname -m),x86_64)
   CFLAGS := -march=native $(CFLAGS)
   OBJS += sha256-avx-asm.o sha256-avx2-asm.o sha256-ssse3-asm.o sha256-ni-asm.o
-else ifeq ($(shell arch),i686)
+else ifeq ($(shell uname -m),i686)
   CFLAGS := -march=native $(CFLAGS)
 endif
 
