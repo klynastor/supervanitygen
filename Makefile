@@ -28,7 +28,10 @@ distclean: clean
 
 vanitygen: $(OBJS)
 
-$(OBJS): Makefile *.h secp256k1/src/libsecp256k1-config.h
+$(OBJS): Makefile *.h secp256k1/src/libsecp256k1-config.h secp256k1/src/ecmult_static_context.h
 
 secp256k1/src/libsecp256k1-config.h:
 	(cd secp256k1;./autogen.sh;./configure)
+
+secp256k1/src/ecmult_static_context.h:
+	$(MAKE) -C secp256k1 src/ecmult_static_context.h
