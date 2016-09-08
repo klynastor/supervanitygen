@@ -22,10 +22,13 @@
 
 #include "externs.h"
 
+/* Number of secp256k1 operations per batch */
+#define STEP 3072
+
 #include "src/libsecp256k1-config.h"
 #include "src/secp256k1.c"
 
-#define VERSION "0.1"
+#define MY_VERSION "0.2"
 
 /* List of public key byte patterns to match */
 static struct {
@@ -56,6 +59,12 @@ static bool add_prefix(char *prefix);
 static double get_difficulty(void);
 static void engine(int thread);
 static bool verify_key(const u8 result[52]);
+
+static void my_secp256k1_ge_set_all_gej_var(secp256k1_ge *r,
+                                            const secp256k1_gej *a);
+static void my_secp256k1_gej_add_ge_var(secp256k1_gej *r,
+                                        const secp256k1_gej *a,
+                                        const secp256k1_ge *b);
 
 
 /**** Main Program ***********************************************************/
@@ -112,7 +121,7 @@ int main(int argc, char *argv[])
                 "  -t num  Run 'num' threads; default=%d\n"
                 "  -v      Be verbose\n\n",
                 *argv, threads);
-        fprintf(stderr, "Super Vanitygen v" VERSION "\n");
+        fprintf(stderr, "Super Vanitygen v" MY_VERSION "\n");
         return 1;
       }
     }
@@ -267,25 +276,27 @@ static void manager_loop(int threads)
       avg += count_avg[i];
     avg /= count_max;
 
-    sprintf(msg, "[%qu Kkey/s][Total %qu]", (avg+500)/1000, count);
+    sprintf(msg, "[%llu Kkey/s][Total %llu]", (avg+500)/1000, count);
 
     /* Display probability */
     prob=(1-exp(count/-difficulty))*100;
     if(prob < 99.95)
       sprintf(msg+strlen(msg), "[Prob %.1f%%]", prob);
 
-    /* Display target time */
-    if(prob < targets[NELEM(targets)-1]) {
-      for(i=0;prob >= targets[i];i++);
-      secs=(-difficulty*log(1-targets[i]/100.0)-count)/avg;
-      for(j=0;j < NELEM(units)-1 && secs < units[j];j++);
-      secs /= units[j];
-      if(secs >= 1e+8)
-        sprintf(msg+strlen(msg), "[%d%% in %e%c]",
-                targets[i], secs, units_str[j]);
-      else
-        sprintf(msg+strlen(msg), "[%d%% in %.1f%c]",
-                targets[i], secs, units_str[j]);
+    if(avg >= 500) {
+      /* Display target time */
+      if(prob < targets[NELEM(targets)-1]) {
+        for(i=0;prob >= targets[i];i++);
+        secs=(-difficulty*log(1-targets[i]/100.0)-count)/avg;
+        for(j=0;j < NELEM(units)-1 && secs < units[j];j++);
+        secs /= units[j];
+        if(secs >= 1e+8)
+          sprintf(msg+strlen(msg), "[%d%% in %e%c]",
+                  targets[i], secs, units_str[j]);
+        else
+          sprintf(msg+strlen(msg), "[%d%% in %.1f%c]",
+                  targets[i], secs, units_str[j]);
+      }
     }
 
     printf("\r%-78.78s", msg);
@@ -359,10 +370,57 @@ static void announce_result(const u8 result[52])
 
 /**** Pattern Matching *******************************************************/
 
-// Add a low/high pattern range to the patterns[] array.
+// Add a low/high pattern range to the patterns[] array, coalescing adjacent or
+// overlapping patterns into one.
 //
 static void add_pattern(void *low, void *high)
 {
+  u32 low_minus_one[5], high_plus_one[5];
+  int i;
+
+  rescan:
+
+  memcpy(low_minus_one, low, 20);
+  if(!low_minus_one[4]--)
+    if(!low_minus_one[3]--)
+      if(!low_minus_one[2]--)
+        if(!low_minus_one[1]--)
+          if(!low_minus_one[0]--)
+            memset(low_minus_one, 0x00, 20);
+
+  memcpy(high_plus_one, high, 20);
+  if(!++high_plus_one[4])
+    if(!++high_plus_one[3])
+      if(!++high_plus_one[2])
+        if(!++high_plus_one[1])
+          if(!++high_plus_one[0])
+            memset(high_plus_one, 0xff, 20);
+
+  /* Loop through existing patterns */
+  for(i=0;i < num_patterns;i++) {
+    /* Ignore new pattern if completely surrounded by existing pattern */
+    if(memcmp(low, patterns[i].low, 20) >= 0 &&
+       memcmp(high, patterns[i].high, 20) <= 0)
+      return;
+
+    /* Extend an existing pattern downward */
+    if(memcmp(low, patterns[i].low, 20) < 0 &&
+       memcmp(high_plus_one, patterns[i].low, 20) >= 0) {
+      if(memcmp(high, patterns[i].high, 20) < 0)
+        memcpy(high, patterns[i].high, 20);
+      memmove(patterns+i, patterns+i+1, (--num_patterns-i)*sizeof(*patterns));
+      goto rescan;
+    }
+
+    /* Extend an existing pattern upward */
+    if(memcmp(high, patterns[i].high, 20) > 0 &&
+       memcmp(low_minus_one, patterns[i].high, 20) <= 0) {
+      memcpy(low, patterns[i].low, 20);
+      memmove(patterns+i, patterns+i+1, (--num_patterns-i)*sizeof(*patterns));
+      goto rescan;
+    }
+  }
+
   /* Resize the array every 100 elements */
   if(!(num_patterns % 100)) {
     if(!(patterns=realloc(patterns, (num_patterns+100)*sizeof(*patterns)))) {
@@ -594,10 +652,7 @@ static bool pubkeycmp(void *low, void *high, void *key)
 #endif
 
 
-/**** Hash engine ************************************************************/
-
-/* Number of secp256k1 operations per batch */
-#define STEP 131072
+/**** Hash Engine ************************************************************/
 
 // Per-thread entry point.
 //
@@ -606,7 +661,7 @@ static void engine(int thread)
   static secp256k1_gej base[STEP];
   static secp256k1_ge rslt[STEP];
   secp256k1_context *sec_ctx;
-  secp256k1_scalar scalar_key, scalar_one;
+  secp256k1_scalar scalar_key, scalar_one={{1}};
   secp256k1_gej temp;
   secp256k1_ge offset;
 
@@ -622,11 +677,6 @@ static void engine(int thread)
 
   /* Initialize the secp256k1 context */
   sec_ctx=secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
-
-  /* Copy private key value 1 to secp256k1 scalar format */
-  memset(privkey, 0, 32);
-  privkey[3]=be64(1);
-  secp256k1_scalar_set_b32(&scalar_one, (u8 *)privkey, NULL);
 
   /* Set up sha256 block for an input length of 33 bytes */
   sha256_prepare(sha_block, 33);
@@ -673,14 +723,16 @@ static void engine(int thread)
 
   /* Main Loop */
 
+  printf("\r");  // This magically makes the loop faster by a smidge
+
   while(1) {
     /* Add 1 in Jacobian coordinates and save the result; repeat STEP times */
-    secp256k1_gej_add_ge_var(&base[0], &base[STEP-1], &offset, NULL);
+    my_secp256k1_gej_add_ge_var(&base[0], &base[STEP-1], &offset);
     for(k=1;k < STEP;k++)
-      secp256k1_gej_add_ge_var(&base[k], &base[k-1], &offset, NULL);
+      my_secp256k1_gej_add_ge_var(&base[k], &base[k-1], &offset);
 
     /* Convert all group elements from Jacobian to affine coordinates */
-    secp256k1_ge_set_all_gej_var(STEP, rslt, base, NULL);
+    my_secp256k1_ge_set_all_gej_var(rslt, base);
 
     for(k=0;k < STEP;k++) {
       thread_count[thread]++;
@@ -776,4 +828,67 @@ static bool verify_key(const u8 result[52])
 
   secp256k1_context_destroy(sec_ctx);
   return ret;
+}
+
+
+/**** libsecp256k1 Overrides *************************************************/
+
+static void my_secp256k1_fe_inv_all_gej_var(secp256k1_fe *r,
+                                            const secp256k1_gej *a)
+{
+  secp256k1_fe u;
+  int i;
+
+  r[0]=a[0].z;
+
+  for(i=1;i < STEP;i++)
+    secp256k1_fe_mul(&r[i], &r[i-1], &a[i].z);
+
+  secp256k1_fe_inv_var(&u, &r[--i]);
+
+  for(;i > 0;i--) {
+    secp256k1_fe_mul(&r[i], &r[i-1], &u);
+    secp256k1_fe_mul(&u, &u, &a[i].z);
+  }
+
+  r[0]=u;
+}
+
+static void my_secp256k1_ge_set_all_gej_var(secp256k1_ge *r,
+                                            const secp256k1_gej *a)
+{
+  static secp256k1_fe azi[STEP];
+  int i;
+
+  my_secp256k1_fe_inv_all_gej_var(azi, a);
+
+  for(i=0;i < STEP;i++)
+    secp256k1_ge_set_gej_zinv(&r[i], &a[i], &azi[i]);
+}
+
+static void my_secp256k1_gej_add_ge_var(secp256k1_gej *r,
+                                        const secp256k1_gej *a,
+                                        const secp256k1_ge *b)
+{
+  /* 8 mul, 3 sqr, 4 normalize, 12 mul_int/add/negate */
+  secp256k1_fe z12, u1, u2, s1, s2, h, i, i2, h2, h3, t;
+
+  secp256k1_fe_sqr(&z12, &a->z);
+  u1 = a->x; secp256k1_fe_normalize_weak(&u1);
+  secp256k1_fe_mul(&u2, &b->x, &z12);
+  s1 = a->y; secp256k1_fe_normalize_weak(&s1);
+  secp256k1_fe_mul(&s2, &b->y, &z12); secp256k1_fe_mul(&s2, &s2, &a->z);
+  secp256k1_fe_negate(&h, &u1, 1); secp256k1_fe_add(&h, &u2);
+  secp256k1_fe_negate(&i, &s1, 1); secp256k1_fe_add(&i, &s2);
+  secp256k1_fe_sqr(&i2, &i);
+  secp256k1_fe_sqr(&h2, &h);
+  secp256k1_fe_mul(&h3, &h, &h2);
+  secp256k1_fe_mul(&r->z, &a->z, &h);
+  secp256k1_fe_mul(&t, &u1, &h2);
+  r->x = t; secp256k1_fe_mul_int(&r->x, 2); secp256k1_fe_add(&r->x, &h3);
+  secp256k1_fe_negate(&r->x, &r->x, 3); secp256k1_fe_add(&r->x, &i2);
+  secp256k1_fe_negate(&r->y, &r->x, 5); secp256k1_fe_add(&r->y, &t);
+  secp256k1_fe_mul(&r->y, &r->y, &i);
+  secp256k1_fe_mul(&h3, &h3, &s1); secp256k1_fe_negate(&h3, &h3, 1);
+  secp256k1_fe_add(&r->y, &h3);
 }

@@ -1,6 +1,6 @@
 CC=gcc
-CFLAGS=-O3 -Wall -Wno-unused-function -Wno-pointer-sign \
-       -flto -flto-partition=none -Isecp256k1 -Isecp256k1/include
+CFLAGS=-Ofast -Wall -Wno-unused-function -Wno-pointer-sign \
+       -Isecp256k1 -Isecp256k1/include -funsafe-loop-optimizations
 LDFLAGS=$(CFLAGS)
 LDLIBS=-lm -lgmp
 

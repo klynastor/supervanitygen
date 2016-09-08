@@ -57,11 +57,6 @@ Here are examples of other programs you can use to verify keys:
 Do not run this program on a computer where others have the ability to strace
 your program's execution.
 
-Known Bugs
-----------
-* The difficulty is not computed correctly when overlapping prefixes are
-  specified (e.g. "vanitygen 1W 1Win").
-
 License
 -------
 This software is distributed under the GPLv2 license. Most individual portions
