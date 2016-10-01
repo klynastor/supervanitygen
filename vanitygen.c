@@ -343,7 +343,7 @@ static void announce_result(const u8 result[52])
   memcpy(priv_block+34, checksum, 4);
 
   b58enc(wif, priv_block, 38);
-  printf("PrivKey (WIF): %s\n", wif);
+  printf("Private Key:   %s\n", wif);
 
   /* Convert Public Key to Compressed WIF */
 
@@ -357,7 +357,7 @@ static void announce_result(const u8 result[52])
   memcpy(pub_block+21, checksum, 4);
 
   b58enc(wif, pub_block, 25);
-  printf("PubKey (WIF):  %s\n", wif);
+  printf("Address:       %s\n", wif);
 
   /* Exit if we only requested one key */
   if(!keep_going)

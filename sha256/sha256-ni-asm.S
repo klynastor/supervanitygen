@@ -53,6 +53,8 @@
  *
  */
 
+#ifdef __x86_64__
+
 #define ENTRY(name) \
         .globl name; \
         .align 4,0x90; \
@@ -357,3 +359,5 @@ K256:
 
 PSHUFFLE_BYTE_FLIP_MASK:
 	.octa 0x0c0d0e0f08090a0b0405060700010203
+
+#endif

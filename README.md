@@ -21,8 +21,8 @@ Example program execution:
     $ vanitygen 1Vanity
     Difficulty: 888446610539
     [5003 Kkey/s][Total 31878804156][Prob 3.5%][50% in 1.4d]
-    PrivKey (WIF): L3jTmJvNtjNrUw5SJJGFfGTog46fLutsQJ4XG66YWHMV5UmgFWqZ
-    PubKey (WIF):  1Vanity8HEFQDR7ZFsAUFeRR67AG38PcR
+    Private Key:   L3jTmJvNtjNrUw5SJJGFfGTog46fLutsQJ4XG66YWHMV5UmgFWqZ
+    Address:       1Vanity8HEFQDR7ZFsAUFeRR67AG38PcR
 
 Build Instructions
 ------------------
@@ -36,11 +36,18 @@ secp256k1 and run configure with your new options, and then rerun make in the
 top level directory.
 
 If the gmp development library is not installed on your system, you may remove
--lgmp from the LDLIBS line in the Makefile.
+-lgmp from the LDLIBS line in the Makefile. See below for other prerequisites.
 
 For slow CPUs, you might get a better hash rate by lowering the "#define STEP"
 value in vanitygen.c. Similarly, server CPUs with large amounts of fast memory
 might benefit by increasing the STEP value.
+
+Prerequisites
+-------------
+Successful compilation depends on installing the following additional programs:
+
+* Autotools (sudo apt-get install automake autoconf)
+* GMP (sudo apt-get install libgmp3-dev)
 
 Warning
 -------
