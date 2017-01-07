@@ -28,7 +28,7 @@
 #include "src/libsecp256k1-config.h"
 #include "src/secp256k1.c"
 
-#define MY_VERSION "0.2"
+#define MY_VERSION "0.3"
 
 /* List of public key byte patterns to match */
 static struct {
@@ -40,6 +40,7 @@ static int num_patterns;
 
 /* Global command-line settings */
 static int  max_count=1;
+static bool anycase;
 static bool keep_going;
 static bool quiet;
 static bool verbose;
@@ -56,7 +57,8 @@ static int sock[2];
 /* Static Functions */
 static void manager_loop(int threads);
 static void announce_result(int found, const u8 result[52]);
-static bool add_prefix(char *prefix);
+static bool add_prefix(const char *prefix);
+static bool add_anycase_prefix(const char *prefix);
 static double get_difficulty(void);
 static void engine(int thread);
 static bool verify_key(const u8 result[52]);
@@ -95,6 +97,9 @@ int main(int argc, char *argv[])
         parse_arg();
         max_count=max(atoi(arg), 1);
         goto end_arg;
+      case 'i':  /* Case-insensitive matches */
+        anycase=1;
+        break;
       case 'k':  /* Keep going */
         keep_going=1;
         break;
@@ -122,6 +127,7 @@ int main(int argc, char *argv[])
                 "Usage: %s [options] prefix ...\n"
                 "Options:\n"
                 "  -c count  Stop after 'count' solutions; default=%d\n"
+                "  -i        Match case-insensitive prefixes\n"
                 "  -k        Keep looking for solutions indefinitely\n"
                 "  -q        Be quiet (report solutions in CSV format)\n"
                 "  -t num    Run 'num' threads; default=%d\n"
@@ -139,7 +145,8 @@ int main(int argc, char *argv[])
 
   // Convert specified prefixes into a global list of public key byte patterns.
   for(;i < argc;i++)
-    if(!add_prefix(argv[i]))
+    if((!anycase && !add_prefix(argv[i])) ||
+       (anycase && !add_anycase_prefix(argv[i])))
       return 1;
   if(!num_patterns)
     goto error;
@@ -452,14 +459,23 @@ static void add_pattern(void *low, void *high)
   memcpy(patterns[num_patterns].low, low, 20);
   memcpy(patterns[num_patterns].high, high, 20);
   num_patterns++;
+
+  /* Searching for addresses gets very slow with too many patterns */
+  if(num_patterns > 10000) {
+    fprintf(stderr, "Error: Too many patterns!\n");
+    exit(0);
+  }
 }
 
-static bool add_prefix(char *prefix)
+// Convert an address prefix to one or more 20-byte patterns to match on the
+// binary level.
+//
+static bool add_prefix(const char *prefix)
 {
   /* Determine range of matching public keys */
   size_t pattern_sz=25;
   size_t b58sz=strlen(prefix);
-  u8 pattern1[25], pattern2[25];
+  u8 pattern1[32], pattern2[32];
   char pat1[64], pat2[64], test[64];
   int i, j, nonzero, offset=0, plen=strlen(prefix);
   bool lt;
@@ -579,6 +595,58 @@ static bool add_prefix(char *prefix)
       memset(pattern2+i+1, 0xff, 21-i-1);
     }
     add_pattern(pattern1+1, pattern2+1);
+  }
+
+  return 1;
+}
+
+// Add pattern matches for all upper and lowercase variants of 'prefix'.
+//
+static bool add_anycase_prefix(const char *prefix)
+{
+  /* Letters that can appear in an address as both upper and lowercase */
+  static const char letters[]="abcdefghjkmnpqrstuvwxyz";
+
+  /* Determine range of matching public keys */
+  u8 positions[32];
+  char lowercase[32], temp[32];
+  int i, j, plen=strlen(prefix), num_positions=0;
+
+  /* Validate prefix */
+  if(prefix[0] != '1') {
+    fprintf(stderr, "Error: Prefix must start with '1'.\n");
+    return 0;
+  } if(plen > 28) {
+    fprintf(stderr, "Error: Prefix too long.\n");
+    return 0;
+  }
+
+  /* Convert prefix to all lowercase */
+  for(i=0;i < plen;i++) {
+    lowercase[i]=(prefix[i] >= 'A' && prefix[i] <= 'Z') ?
+                 (prefix[i]|32) : prefix[i];
+
+    /* "L" must always be uppercase */
+    if(lowercase[i] == 'l')
+      lowercase[i]='L';
+
+    /* Remember which letter positions can shift case */
+    else if(strchr(letters, lowercase[i]))
+      positions[num_positions++]=i;
+  }
+  lowercase[i]='\0';
+
+  /* Add prefixes for all upper/lowercase variants */
+  for(i=0;i < (1 << num_positions);i++) {
+    strcpy(temp, lowercase);
+
+    /* Uppercase some positions in the prefix */
+    for(j=0;j < num_positions;j++)
+      if(i & (1 << j))
+        temp[positions[j]] &= ~32;
+
+    if(!add_prefix(temp))
+      return 0;
   }
 
   return 1;
