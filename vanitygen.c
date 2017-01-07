@@ -39,6 +39,7 @@ static struct {
 static int num_patterns;
 
 /* Global command-line settings */
+static int  max_count=1;
 static bool keep_going;
 static bool quiet;
 static bool verbose;
@@ -54,7 +55,7 @@ static int sock[2];
 
 /* Static Functions */
 static void manager_loop(int threads);
-static void announce_result(const u8 result[52]);
+static void announce_result(int found, const u8 result[52]);
 static bool add_prefix(char *prefix);
 static double get_difficulty(void);
 static void engine(int thread);
@@ -90,7 +91,11 @@ int main(int argc, char *argv[])
       break;
     for(j=1;argv[i][j];j++) {
       switch(argv[i][j]) {
-      case 'k':  /* Keep Going */
+      case 'c':  /* Count */
+        parse_arg();
+        max_count=max(atoi(arg), 1);
+        goto end_arg;
+      case 'k':  /* Keep going */
         keep_going=1;
         break;
       case 'q':  /* Quiet */
@@ -116,11 +121,12 @@ int main(int argc, char *argv[])
         fprintf(stderr,
                 "Usage: %s [options] prefix ...\n"
                 "Options:\n"
-                "  -k      Keep going even after the first match is found\n"
-                "  -q      Be quiet (only report solutions)\n"
-                "  -t num  Run 'num' threads; default=%d\n"
-                "  -v      Be verbose\n\n",
-                *argv, threads);
+                "  -c count  Stop after 'count' solutions; default=%d\n"
+                "  -k        Keep looking for solutions indefinitely\n"
+                "  -q        Be quiet (report solutions in CSV format)\n"
+                "  -t num    Run 'num' threads; default=%d\n"
+                "  -v        Be verbose\n\n",
+                *argv, max_count, threads);
         fprintf(stderr, "Super Vanitygen v" MY_VERSION "\n");
         return 1;
       }
@@ -219,7 +225,7 @@ static void manager_loop(int threads)
   char msg[256];
   u8 result[52];
   u64 prev=0, last_result=0, count, avg, count_avg[8];
-  int i, j, ret, len, count_index=0, count_max=0;
+  int i, j, ret, len, found=0, count_index=0, count_max=0;
   double prob, secs;
 
   FD_ZERO(&readset);
@@ -248,7 +254,7 @@ static void manager_loop(int threads)
       if(!verify_key(result))
         continue;
 
-      announce_result(result);
+      announce_result(++found, result);
 
       /* Reset hash count */
       for(i=0,count=0;i < threads;i++)
@@ -299,12 +305,20 @@ static void manager_loop(int threads)
       }
     }
 
+    /* Display match count */
+    if(found) {
+      if(!keep_going && max_count > 1)
+        sprintf(msg+strlen(msg), "[Found %d of %d]", found, max_count);
+      else
+        sprintf(msg+strlen(msg), "[Found %d]", found);
+    }
+
     printf("\r%-78.78s", msg);
     fflush(stdout);
   }
 }
 
-static void announce_result(const u8 result[52])
+static void announce_result(int found, const u8 result[52])
 {
   align8 u8 priv_block[64], pub_block[64], cksum_block[64];
   align8 u8 wif[64], checksum[32];
@@ -343,7 +357,10 @@ static void announce_result(const u8 result[52])
   memcpy(priv_block+34, checksum, 4);
 
   b58enc(wif, priv_block, 38);
-  printf("Private Key:   %s\n", wif);
+  if(quiet)
+    printf("%s", wif);
+  else
+    printf("Private Key:   %s\n", wif);
 
   /* Convert Public Key to Compressed WIF */
 
@@ -357,10 +374,13 @@ static void announce_result(const u8 result[52])
   memcpy(pub_block+21, checksum, 4);
 
   b58enc(wif, pub_block, 25);
-  printf("Address:       %s\n", wif);
+  if(quiet)
+    printf(",%s\n", wif);
+  else
+    printf("Address:       %s\n", wif);
 
-  /* Exit if we only requested one key */
-  if(!keep_going)
+  /* Exit after we find 'max_count' solutions */
+  if(!keep_going && found >= max_count)
     exit(0);
 
   if(!quiet)

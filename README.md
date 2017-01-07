@@ -24,6 +24,24 @@ Example program execution:
     Private Key:   L3jTmJvNtjNrUw5SJJGFfGTog46fLutsQJ4XG66YWHMV5UmgFWqZ
     Address:       1Vanity8HEFQDR7ZFsAUFeRR67AG38PcR
 
+Build Prerequisites
+-------------------
+Successful compilation depends on installing these additional programs:
+
+* GCC
+* Make
+* Libtool
+* Autotools
+* GMP
+
+Installing prerequisites on RedHat or Fedora Core:
+
+    $ yum -y install gcc make automake autoconf libtool gmp-devel
+
+Installing prerequisites on Ubuntu:
+
+    $ sudo apt-get install build-essential automake autoconf libtool libgmp3-dev
+
 Build Instructions
 ------------------
 Simply run make:
@@ -41,13 +59,6 @@ If the gmp development library is not installed on your system, you may remove
 For slow CPUs, you might get a better hash rate by lowering the "#define STEP"
 value in vanitygen.c. Similarly, server CPUs with large amounts of fast memory
 might benefit by increasing the STEP value.
-
-Prerequisites
--------------
-Successful compilation depends on installing the following additional programs:
-
-* Autotools (sudo apt-get install automake autoconf)
-* GMP (sudo apt-get install libgmp3-dev)
 
 Warning
 -------
