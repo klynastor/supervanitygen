@@ -85,7 +85,7 @@ static void my_secp256k1_gej_add_ge_var(secp256k1_gej *r,
 int main(int argc, char *argv[])
 {
   char *arg;
-  int i, j, digits, parent_pid, ncpus=get_nprocs_conf(), threads=ncpus;
+  int i, j, digits, parent_pid, ncpus=get_num_cpus(), threads=ncpus;
 
   /* Process command-line arguments */
   for(i=1;i < argc;i++) {
@@ -607,7 +607,6 @@ static bool add_anycase_prefix(const char *prefix)
   /* Letters that can appear in an address as both upper and lowercase */
   static const char letters[]="abcdefghjkmnpqrstuvwxyz";
 
-  /* Determine range of matching public keys */
   u8 positions[32];
   char lowercase[32], temp[32];
   int i, j, plen=strlen(prefix), num_positions=0;
@@ -753,15 +752,12 @@ static void engine(int thread)
   secp256k1_gej temp;
   secp256k1_ge offset;
 
-  cpu_set_t cpuset;
   align8 u8 sha_block[64], rmd_block[64], result[52], *pubkey=result+32;
   u64 privkey[4], *key=(u64 *)result;
   int i, k, fd, len;
 
   /* Set CPU affinity for this thread# (ignore any failures) */
-  CPU_ZERO(&cpuset);
-  CPU_SET(thread, &cpuset);
-  sched_setaffinity(0, sizeof(cpuset), &cpuset);
+  set_working_cpu(thread);
 
   /* Initialize the secp256k1 context */
   sec_ctx=secp256k1_context_create(SECP256K1_CONTEXT_SIGN);

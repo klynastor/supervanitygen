@@ -41,15 +41,19 @@ typedef unsigned quad u64;
 
 /* Little/big-endian byte conversions */
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-# define le32(x) (x)
-# define le64(x) (x)
+# define le16(x) ((u16)(x))
+# define le32(x) ((u32)(x))
+# define le64(x) ((u64)(x))
+# define be16(x) __builtin_bswap16(x)
 # define be32(x) __builtin_bswap32(x)
 # define be64(x) __builtin_bswap64(x)
 #else
+# define le16(x) __builtin_bswap16(x)
 # define le32(x) __builtin_bswap32(x)
 # define le64(x) __builtin_bswap64(x)
-# define be32(x) (x)
-# define be64(x) (x)
+# define be16(x) ((u16)(x))
+# define be32(x) ((u32)(x))
+# define be64(x) ((u64)(x))
 #endif
 
 /* Swap the values of two integers, quadwords, doubles, etc. */
@@ -79,20 +83,13 @@ typedef unsigned quad u64;
 /* libsecp256k1 */
 #include "secp256k1.h"
 
-/* sha256.c */
-extern void sha256_init(void);
-extern void sha256_process(const char input_block[64]);
-extern void sha256_finish(char output[32]);
-extern void sha256_hash(char output[32], const char input[64]);
-extern void sha256_register(bool verbose);
+/* base58.c */
+extern bool b58tobin(void *bin, size_t *binszp, const char *b58, size_t b58sz);
+extern bool b58enc(char *b58, const void *data, size_t binsz);
 
-#define sha256_prepare(block, sz) ({ \
-  int _sz=(sz); \
-  memset(block, 0, 64); \
-  block[_sz]=0x80; \
-  block[62]=(_sz*8) >> 8;  /* Big-endian length in bits */ \
-  block[63]=(_sz*8) & 0xff; \
-})
+/* cpu.c */
+extern int  get_num_cpus(void);
+extern void set_working_cpu(int thread);
 
 /* rmd160.c */
 extern void rmd160_init(void);
@@ -108,6 +105,17 @@ extern void rmd160_hash(char output[20], const char input[64]);
   block[56]=(_sz*8) & 0xff; \
 })
 
-/* base58.c */
-extern bool b58tobin(void *bin, size_t *binszp, const char *b58, size_t b58sz);
-extern bool b58enc(char *b58, const void *data, size_t binsz);
+/* sha256.c */
+extern void sha256_init(void);
+extern void sha256_process(const char input_block[64]);
+extern void sha256_finish(char output[32]);
+extern void sha256_hash(char output[32], const char input[64]);
+extern void sha256_register(bool verbose);
+
+#define sha256_prepare(block, sz) ({ \
+  int _sz=(sz); \
+  memset(block, 0, 64); \
+  block[_sz]=0x80; \
+  block[62]=(_sz*8) >> 8;  /* Big-endian length in bits */ \
+  block[63]=(_sz*8) & 0xff; \
+})

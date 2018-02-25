@@ -7,7 +7,7 @@ LDLIBS=-lm -lgmp
 SHA256=sha256/sha256.o sha256/sha256-avx-asm.o sha256/sha256-avx2-asm.o \
        sha256/sha256-ssse3-asm.o sha256/sha256-ni-asm.o
 
-OBJS=vanitygen.o base58.o rmd160.o $(SHA256)
+OBJS=vanitygen.o base58.o cpu.o rmd160.o $(SHA256)
 
 
 all: vanitygen
