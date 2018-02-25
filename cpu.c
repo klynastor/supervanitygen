@@ -13,28 +13,27 @@ int get_num_cpus()
 {
   cpuset_ncpu=1024;  /* Starting number of CPUs */
 
-  do {
+  while(1) {
     cpuset=CPU_ALLOC(cpuset_ncpu);
     cpuset_size=CPU_ALLOC_SIZE(cpuset_ncpu);
 
-    if(sched_getaffinity(0, cpuset_size, cpuset) == -1) {
-      if(errno == EINVAL) {
-        /* Loop, doubling the cpuset, until sched_getaffinity() succeeds */
-        CPU_FREE(cpuset);
-        cpuset_ncpu *= 2;
-        continue;
-      }
+    if(!sched_getaffinity(0, cpuset_size, cpuset))
+      return CPU_COUNT_S(cpuset_size, cpuset);
 
-      /* Unexpected error, but at least 1 CPU has to be available */
+    if(errno == EINVAL) {
+      /* Loop, doubling the cpuset, until sched_getaffinity() succeeds */
       CPU_FREE(cpuset);
-      cpuset=NULL;
-      cpuset_ncpu=0;
-      cpuset_size=0;
-      return 1;
+      cpuset_ncpu *= 2;
+      continue;
     }
-  } while(0);
 
-  return CPU_COUNT_S(cpuset_size, cpuset);
+    /* Unexpected error, but at least 1 CPU has to be available */
+    CPU_FREE(cpuset);
+    cpuset=NULL;
+    cpuset_ncpu=0;
+    cpuset_size=0;
+    return 1;
+  }
 }
 
 // Set this thread's CPU affinity to the Nth CPU in the list.
