@@ -14,8 +14,8 @@ int get_num_cpus()
   cpuset_ncpu=1024;  /* Starting number of CPUs */
 
   do {
-    cpuset=CPU_ALLOC(cpuset_ncpu+1);
-    cpuset_size=CPU_ALLOC_SIZE(cpuset_ncpu+1);
+    cpuset=CPU_ALLOC(cpuset_ncpu);
+    cpuset_size=CPU_ALLOC_SIZE(cpuset_ncpu);
 
     if(sched_getaffinity(0, cpuset_size, cpuset) == -1) {
       if(errno == EINVAL) {
