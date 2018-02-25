@@ -3,6 +3,7 @@
 #include "externs.h"
 
 static cpu_set_t *cpuset;
+static int cpuset_ncpu;
 static size_t cpuset_size;
 
 
@@ -10,35 +11,30 @@ static size_t cpuset_size;
 //
 int get_num_cpus()
 {
-  int i, count=0;
-
-  cpuset_size=1024;  /* Starting buffer size */
+  cpuset_ncpu=1024;  /* Starting number of CPUs */
 
   do {
-    cpuset=CPU_ALLOC(cpuset_size+1);
+    cpuset=CPU_ALLOC(cpuset_ncpu+1);
+    cpuset_size=CPU_ALLOC_SIZE(cpuset_ncpu+1);
 
-    if(sched_getaffinity(0, CPU_ALLOC_SIZE(cpuset_size+1), cpuset) == -1) {
+    if(sched_getaffinity(0, cpuset_size, cpuset) == -1) {
       if(errno == EINVAL) {
         /* Loop, doubling the cpuset, until sched_getaffinity() succeeds */
         CPU_FREE(cpuset);
-        cpuset_size *= 2;
+        cpuset_ncpu *= 2;
         continue;
       }
 
       /* Unexpected error, but at least 1 CPU has to be available */
       CPU_FREE(cpuset);
+      cpuset=NULL;
+      cpuset_ncpu=0;
       cpuset_size=0;
       return 1;
     }
   } while(0);
 
-  // Count CPUs in set. Note: CPU_COUNT_S() is unreliable, so it is not used
-  // here.
-  for(i=0;i < cpuset_size;i++)
-    if(CPU_ISSET_S(i, cpuset_size+1, cpuset))
-      count++;
-
-  return count;
+  return CPU_COUNT_S(cpuset_size, cpuset);
 }
 
 // Set this thread's CPU affinity to the Nth CPU in the list.
@@ -54,14 +50,14 @@ void set_working_cpu(int thread)
   // from the call to get_num_cpus(). Look for the Nth one.
 
   for(i=0;;) {
-    if(CPU_ISSET_S(i, cpuset_size+1, cpuset) && !thread--) {
-      CPU_ZERO_S(cpuset_size+1, cpuset);
-      CPU_SET_S(i, cpuset_size+1, cpuset);
-      sched_setaffinity(0, cpuset_size+1, cpuset);  /* Ignore any errors */
+    if(CPU_ISSET_S(i, cpuset_size, cpuset) && !thread--) {
+      CPU_ZERO_S(cpuset_size, cpuset);
+      CPU_SET_S(i, cpuset_size, cpuset);
+      sched_setaffinity(0, cpuset_size, cpuset);  /* Ignore any errors */
       return;
     }
 
-    if(++i >= cpuset_size)
+    if(++i >= cpuset_ncpu)
       i=0;  /* Wrap around */
   }
 }
